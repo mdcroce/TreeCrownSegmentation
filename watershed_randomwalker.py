@@ -1,12 +1,10 @@
 """
 Tree Crown Segmentation with Watershed and Random Walker
 
-by Matheus Della Croce Oliveira
-
 
 Usage: python2 watershed_randomwalker.py original_image ground_truth soil_removed_image(optional)
 
-Packages required: python2, scikit-image (skimage), opencv2
+Packages required: python2, opencv2, numpy, scipy, matplotlib, scikit-image 0.11.3
 For images 512x512 use mode=cg_mg for Random Walker
 
 """
@@ -33,26 +31,27 @@ if len(sys.argv) > 4 or len(sys.argv) < 3:
 
 #loading images
 image = io.imread(str(sys.argv[1]))
+image_color = image
 ground_truth = cv2.imread(str(sys.argv[2]),cv2.CV_LOAD_IMAGE_GRAYSCALE)
 
 if (image==None) or (ground_truth==None):
-    print "Images are missing!"
+    print "Images not found!"
     exit(0)
 
-soil_removed_image =  False
-
-if (str(sys.argv[1])!=None):
-    soil_removed_image = True
+if (len(sys.argv) == 4):
+	soil_removed =  True
+else:
+	soil_removed =  False
 
 #2046x1265
 #1023x632
 #define region of interest
 roi = False
 if roi == True:
-    roi_x1 = 1768
-    roi_x2 = 0
-    roi_y1 = 2034
-    roi_y2 = 0
+    roi_x1 = 3000
+    roi_x2 = 2400
+    roi_y1 = 1600
+    roi_y2 = 1000
 else:
     roi_x1 = image.shape[0]
     roi_x2 = 0
@@ -74,14 +73,13 @@ print "OTSU Threshold with sliding window"
 selem = rectangle(100,100)
 local_otsu = rank.otsu(image, selem)
 
+
 #
-if soil_removed_image:
-	soil_removed_image=io.imread(str(sys.argv[3]))
-	#ii, jj = np.where(aprendizado==0)
+if soil_removed:
+	soil_removed_image=io.imread(str(sys.argv[3]),as_grey=True)
 	if (roi == True):
 		soil_removed_image = soil_removed_image[roi_x2:roi_x1, roi_y2:roi_y1]
-	#image[ii, jj] = 0
-	ii, jj = np.where(soil_removed_image==1)
+	ii, jj = np.where(soil_removed_image==0)
 	image[ii, jj] = 0
  
 binary_image = image > local_otsu
@@ -92,7 +90,7 @@ distance = ndimage.distance_transform_edt(binary_image)
 
 
 print "Extract local maxima"
-local_maxi = peak_local_max(distance, indices=False, footprint=np.ones((25,25)),threshold_abs = 10, labels=binary_image)
+local_maxi = peak_local_max(distance, indices=False, footprint=np.ones((55,55)),threshold_abs = 10, labels=binary_image)
 
 print "Markers for WS"
 markers = morphology.label(local_maxi)
@@ -102,6 +100,8 @@ start_ws = time.clock()
 labels_ws = watershed(-distance, markers, mask=binary_image)
 end_ws = time.clock()
 time_ws = end_ws - start_ws
+
+imsave("labelsws.png",labels_ws)
 
 print "Threshold to extract circles"
 rest, ground_truth = cv2.threshold(ground_truth,7,255,cv2.THRESH_BINARY)
@@ -130,10 +130,8 @@ print "Markers for RW"
 markers[~binary_image.astype(bool)] = -1 
 
 print "Random walker"
-
 start_rw = time.clock()
-#labels_rw = random_walker(binary_image.astype(bool), markers,mode='bf')
-labels_rw = labels_ws
+labels_rw = random_walker(binary_image.astype(bool), markers,copy=False,beta=10,mode='bf')
 end_rw = time.clock()
 tempo_rw = end_rw - start_rw
 
@@ -206,9 +204,9 @@ print "Results watershed:"
 
 print "Ns: ", tp
 
-print "Nc: ", falso_negativo
+print "No: ", falso_negativo
 
-print "No:", fp
+print "Nc:", fp
 
 print "Number of errors: ", falso_negativo + fp
 
@@ -222,7 +220,7 @@ print "Time watershed: ", time_ws
 
 #print "Salva imagens das arvores individuais"
 #for i in range(len(slices)):
-#    imsave("resultados/seg/"+str(i)+".jpg",image[slices[i]],cmap="gray")
+#    imsave(str(i)+".jpg",image_color[slices[i]],cmap="gray")
 
 ########## RANDOM WALK
 print "\n"
@@ -251,15 +249,15 @@ for central_point in circles[0,]:
 tp = acertos
 fp = np.sum(pm)
 
-print "Resultados RandomWalk:"
+print "Results for RandomWalk:"
 
 print "Ns: ", tp
 
-print "Nc: ", falso_negativo
+print "No: ", falso_negativo
 
-print "No:", fp
+print "Nc:", fp
 
-print "Total errors: ", falso_negativo + fp
+print "Number of errors: ", falso_negativo + fp
 
 acuracia = float(tp)/(tp + fp + falso_negativo)
 print "Score: ", acuracia
@@ -267,7 +265,8 @@ print "Score: ", acuracia
 print "Time randomwalk: ", tempo_rw
 #print "Salva imagens das arvores individuais"
 #for i in range(len(slices_rw)):
-#    imsave("resultados/seg/"+str(i)+".jpg",image[slices_rw[i]],cmap="gray")
+#    imsave(str(i)+".jpg",image_color[slices_rw[i]])
+
 
 ################################################
 sys.exit(0)
@@ -285,25 +284,14 @@ plt.title('watershed')
 plt.subplot(143)
 plt.imshow(ground_truth, cmap='spectral', interpolation='nearest')
 plt.axis('off')
-plt.title('gt_binarizado')
+plt.title('bin')
 plt.subplot(144)
 plt.imshow(circle_image_ws)
 plt.axis('off')
-plt.title('circulada')
+plt.title('circle')
 
 
 plt.tight_layout()
 
-"""
-counter = 1
-fig, axes = plt.subplots(ncols=len(slices))
-for ax, sli in zip(axes.flat, slices):
-    counter = counter + 1
-    ax.imshow(labels_ws[sli], vmin=0, vmax=len(slices))
-    tpl = 'BBox:\nymin:{0.start}, ymax:{0.stop}\nxmin:{1.start}, xmax:{1.stop}'
-    ax.set_title(tpl.format(*sli))
-    print sli
-    #imsave("resultados/seg/"+tpl+".jpg",image[slices[i]],cmap='gray')
-fig.suptitle('Individual Objects')
+
 exit()
-"""
