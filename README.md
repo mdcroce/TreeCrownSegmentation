@@ -18,4 +18,4 @@ Usage: python2 watershed_randomwalker.py original_image ground_truth soil_remove
 ====================================
 NOTE:
 
-For images 512x512 use mode=cg_mg for Random Walker segmentation
+For images greater than 512x512 pixels, use mode=cg_mg for Random Walker segmentation
